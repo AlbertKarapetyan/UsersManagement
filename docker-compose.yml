@@ -1,0 +1,35 @@
+﻿services:
+  azure-sql-edge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: azure-sql-edge
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Ak.12345Qw
+    volumes:
+      - ./sql-scripts:/init-scripts
+    entrypoint: >
+      /bin/bash -c "
+      /opt/mssql/bin/sqlservr &
+      sleep 30 &&
+      echo 'Checking SQL Server readiness...' &&
+      while ! /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Ak.12345Qw -Q 'SELECT 1' > /dev/null 2>&1; do
+        echo 'Waiting for SQL Server to be ready...'
+        sleep 5
+      done &&
+      echo 'Checking if database initialization is needed...' &&
+      if [ ! -f /init-scripts/.db_initialized ]; then
+          echo 'SQL Server is ready. Creating database...' &&
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Ak.12345Qw -Q 'CREATE DATABASE UsersDatabase;' &&
+          echo 'Running create_tables.sql...' &&
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Ak.12345Qw -d UsersDatabase -i /init-scripts/create_tables.sql &&
+          echo 'Running fill_data.sql...' &&
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Ak.12345Qw -d UsersDatabase -i /init-scripts/fill_data.sql &&
+          touch /init-scripts/.db_initialized &&
+          echo 'Database and tables initialized.'
+      else
+        echo 'Database already initialized. Skipping setup.'
+      fi &&
+      wait
+      "
